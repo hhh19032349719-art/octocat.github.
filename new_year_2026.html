@@ -1,0 +1,358 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2026 新年快乐</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: "Microsoft YaHei", sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* 画布层级：烟花在底层，花朵在上层 */
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #fireworksCanvas { z-index: 1; }
+        #flowerCanvas { z-index: 2; pointer-events: none; }
+
+        /* 文字容器 */
+        #text-container {
+            z-index: 10;
+            color: #fff;
+            text-align: center;
+            text-shadow: 0 0 10px #ff0055, 0 0 20px #ff0055, 0 0 40px #ff0055;
+            transition: opacity 1s ease-in-out;
+            position: absolute;
+            width: 100%;
+        }
+
+        .big-text {
+            font-size: 8rem;
+            font-weight: bold;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 0.5s ease-out;
+        }
+
+        .message-text {
+            font-size: 5rem;
+            font-weight: bold;
+            opacity: 0;
+            letter-spacing: 5px;
+            background: linear-gradient(to right, #fff, #ffc0cb, #ff69b4);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            transform: translateY(20px);
+            transition: all 0.8s ease-out;
+        }
+
+        /* 激活状态的类 */
+        .visible {
+            opacity: 1 !important;
+            transform: scale(1) translateY(0) !important;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="fireworksCanvas"></canvas>
+    <canvas id="flowerCanvas"></canvas>
+
+    <div id="text-container">
+        <div id="content" class="big-text"></div>
+    </div>
+
+<script>
+    // ================= 1. 烟花系统 (背景) =================
+    const fwCanvas = document.getElementById('fireworksCanvas');
+    const fwCtx = fwCanvas.getContext('2d');
+    let fwWidth, fwHeight;
+    let fireworks = [];
+    let particles = [];
+
+    function resizeFireworks() {
+        fwWidth = window.innerWidth;
+        fwHeight = window.innerHeight;
+        fwCanvas.width = fwWidth;
+        fwCanvas.height = fwHeight;
+    }
+    window.addEventListener('resize', resizeFireworks);
+    resizeFireworks();
+
+    function random(min, max) { return Math.random() * (max - min) + min; }
+
+    class Firework {
+        constructor(sx, sy, tx, ty) {
+            this.x = sx; this.y = sy; this.sx = sx; this.sy = sy;
+            this.tx = tx; this.ty = ty;
+            this.distanceToTarget = Math.sqrt(Math.pow(tx - sx, 2) + Math.pow(ty - sy, 2));
+            this.distanceTraveled = 0;
+            this.coordinates = [];
+            this.coordinateCount = 3;
+            while (this.coordinateCount--) { this.coordinates.push([this.x, this.y]); }
+            this.angle = Math.atan2(ty - sy, tx - sx);
+            this.speed = 2;
+            this.acceleration = 1.05;
+            this.brightness = random(60, 80); // 提高亮度范围
+            this.targetRadius = 1;
+        }
+        update(index) {
+            this.coordinates.pop();
+            this.coordinates.unshift([this.x, this.y]);
+            this.speed *= this.acceleration;
+            const vx = Math.cos(this.angle) * this.speed;
+            const vy = Math.sin(this.angle) * this.speed;
+            this.distanceTraveled = Math.sqrt(Math.pow(this.x - this.sx, 2) + Math.pow(this.y - this.sy, 2));
+
+            if (this.distanceTraveled >= this.distanceToTarget) {
+                createParticles(this.tx, this.ty);
+                fireworks.splice(index, 1);
+            } else {
+                this.x += vx; this.y += vy;
+            }
+        }
+        draw() {
+            fwCtx.beginPath();
+            fwCtx.moveTo(this.coordinates[this.coordinates.length - 1][0], this.coordinates[this.coordinates.length - 1][1]);
+            fwCtx.lineTo(this.x, this.y);
+            fwCtx.strokeStyle = 'hsl(' + random(0, 360) + ', 100%, ' + this.brightness + '%)';
+            fwCtx.stroke();
+        }
+    }
+
+    class Particle {
+        constructor(x, y) {
+            this.x = x; this.y = y;
+            this.coordinates = [];
+            this.coordinateCount = 5; // 增加尾迹长度
+            while (this.coordinateCount--) { this.coordinates.push([this.x, this.y]); }
+            this.angle = random(0, Math.PI * 2);
+            this.speed = random(1, 15); // 增加爆炸速度范围
+            this.friction = 0.95;
+            this.gravity = 1;
+            this.hue = random(0, 360);
+            this.brightness = random(60, 90); // 更加明亮
+            this.alpha = 1;
+            this.decay = random(0.01, 0.025); // 减慢消失速度
+        }
+        update(index) {
+            this.coordinates.pop();
+            this.coordinates.unshift([this.x, this.y]);
+            this.speed *= this.friction;
+            this.x += Math.cos(this.angle) * this.speed;
+            this.y += Math.sin(this.angle) * this.speed + this.gravity;
+            this.alpha -= this.decay;
+            if (this.alpha <= this.decay) particles.splice(index, 1);
+        }
+        draw() {
+            fwCtx.beginPath();
+            fwCtx.moveTo(this.coordinates[this.coordinates.length - 1][0], this.coordinates[this.coordinates.length - 1][1]);
+            fwCtx.lineTo(this.x, this.y);
+            // 增加饱和度和亮度
+            fwCtx.strokeStyle = 'hsla(' + this.hue + ', 100%, ' + this.brightness + '%, ' + this.alpha + ')';
+            fwCtx.stroke();
+        }
+    }
+
+    function createParticles(x, y) {
+        // 修改点 1：增加粒子数量，使爆炸更绚丽
+        let particleCount = 80; 
+        while (particleCount--) particles.push(new Particle(x, y));
+    }
+
+    function loopFireworks() {
+        requestAnimationFrame(loopFireworks);
+        fwCtx.globalCompositeOperation = 'destination-out';
+        fwCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        fwCtx.fillRect(0, 0, fwWidth, fwHeight);
+        fwCtx.globalCompositeOperation = 'lighter';
+
+        let i = fireworks.length;
+        while (i--) { fireworks[i].draw(); fireworks[i].update(i); }
+        let j = particles.length;
+        while (j--) { particles[j].draw(); particles[j].update(j); }
+
+        // 稍微提高自动发射频率
+        if (Math.random() < 0.08) { 
+            fireworks.push(new Firework(fwWidth / 2, fwHeight, random(0, fwWidth), random(0, fwHeight / 2)));
+        }
+    }
+    loopFireworks(); // 启动烟花
+
+    // ================= 2. 3D 康乃馨系统 (粒子构建) =================
+    const flCanvas = document.getElementById('flowerCanvas');
+    const flCtx = flCanvas.getContext('2d');
+    let flWidth, flHeight;
+    let flowerParticles = [];
+    let showFlower = false;
+
+    function resizeFlower() {
+        flWidth = window.innerWidth;
+        flHeight = window.innerHeight;
+        flCanvas.width = flWidth;
+        flCanvas.height = flHeight;
+    }
+    window.addEventListener('resize', resizeFlower);
+    resizeFlower();
+
+    // 康乃馨数学模型生成器
+    function createCarnation() {
+        flowerParticles = [];
+        const layers = 60; 
+        for (let i = 0; i < layers; i++) {
+            const p = i / layers; 
+            const layerRadius = 150 * (1 - p * 0.5); 
+            const yOffset = p * 50; 
+
+            const pointsPerLayer = 100 + i * 5;
+            for (let j = 0; j < pointsPerLayer; j++) {
+                const angle = (j / pointsPerLayer) * Math.PI * 2;
+
+                const wave = Math.sin(angle * 15) * 10 * (1-p) + Math.cos(angle * 30) * 5;
+                const r = layerRadius + wave + Math.random() * 5;
+
+                const x = r * Math.cos(angle);
+                const z = r * Math.sin(angle);
+                const y = yOffset + (Math.random() - 0.5) * 20 - (r*r)/800; 
+
+                flowerParticles.push({
+                    x: x, y: y, z: z,
+                    baseX: x, baseY: y, baseZ: z,
+                    color: `hsla(${340 + Math.random()*20}, 80%, ${60 + p*20}%, ${0.6 + Math.random()*0.4})`, 
+                    size: 1.5 + Math.random()
+                });
+            }
+        }
+        for(let k=0; k<100; k++) {
+             flowerParticles.push({
+                x: (Math.random()-0.5)*5, 
+                y: 50 + k * 3, 
+                z: (Math.random()-0.5)*5,
+                baseX: (Math.random()-0.5)*5, 
+                baseY: 50 + k * 3, 
+                baseZ: (Math.random()-0.5)*5,
+                color: 'green',
+                size: 2
+            });
+        }
+    }
+
+    let rotX = 0, rotY = 0;
+
+    function loopFlower() {
+        if (!showFlower) {
+            requestAnimationFrame(loopFlower);
+            return;
+        }
+
+        flCtx.clearRect(0, 0, flWidth, flHeight);
+
+        const centerX = flWidth / 2;
+        const centerY = flHeight / 2;
+        const fov = 300;
+
+        rotY += 0.01; 
+        rotX = Math.sin(Date.now() * 0.001) * 0.2 + 0.2; 
+
+        flowerParticles.sort((a, b) => b.transformedZ - a.transformedZ);
+
+        flowerParticles.forEach(p => {
+            let x1 = p.baseX;
+            let y1 = p.baseY * Math.cos(rotX) - p.baseZ * Math.sin(rotX);
+            let z1 = p.baseY * Math.sin(rotX) + p.baseZ * Math.cos(rotX);
+
+            let x2 = x1 * Math.cos(rotY) - z1 * Math.sin(rotY);
+            let y2 = y1;
+            let z2 = x1 * Math.sin(rotY) + z1 * Math.cos(rotY);
+
+            p.transformedZ = z2;
+
+            const scale = fov / (fov + z2 + 200);
+            const x2d = x2 * scale + centerX;
+            const y2d = y2 * scale + centerY;
+
+            if (scale > 0) {
+                flCtx.fillStyle = p.color;
+                flCtx.beginPath();
+                flCtx.arc(x2d, y2d, p.size * scale, 0, Math.PI * 2);
+                flCtx.fill();
+            }
+        });
+
+        requestAnimationFrame(loopFlower);
+    }
+    createCarnation();
+    loopFlower();
+
+    // ================= 3. 流程控制 (Timeline) =================
+    const contentDiv = document.getElementById('content');
+
+    function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    async function showText(text, isMessage = false) {
+        contentDiv.className = isMessage ? 'message-text' : 'big-text';
+        contentDiv.classList.remove('visible');
+
+        await wait(500); 
+        contentDiv.innerHTML = text;
+        contentDiv.classList.add('visible');
+    }
+
+    async function startSequence() {
+        // 1. 倒计时 5 秒
+        for (let i = 5; i > 0; i--) {
+            await showText(i);
+            await wait(1000);
+        }
+
+        // 2. 2026
+        await showText("2026");
+        // 触发一大波烟花
+        for(let i=0; i<15; i++) fireworks.push(new Firework(fwWidth / 2, fwHeight, random(0, fwWidth), random(0, fwHeight/2)));
+        await wait(2000);
+
+        // 3. 祝计漫语
+        await showText("祝计漫语", true);
+        await wait(2000);
+
+        // 4. 新年快乐
+        await showText("新年快乐", true);
+        await wait(2000);
+
+        // 5. 天天开心
+        await showText("天天开心", true);
+        await wait(2000);
+
+        // 修改点 2：删除了“我喜欢你”的显示，直接跳转到花朵显示
+
+        // 6. 显示康乃馨
+        // 淡出文字
+        contentDiv.classList.remove('visible'); 
+        // 启动花朵渲染
+        showFlower = true;
+
+        // 让文字显示在花朵上方 (可选，或者让文字消失专注于花)
+        setTimeout(() => {
+             contentDiv.classList.add('visible');
+        }, 1000);
+    }
+
+    // 页面加载后开始
+    startSequence();
+
+</script>
+</body>
+</html>
